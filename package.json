@@ -1,11 +1,10 @@
 {
-  "name": "roblox-ip-logger",
-  "version": "1.0.0",
+  "name": "roblox-ultra-logger",
+  "version": "2.0.0",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
+  "scripts": { "start": "node index.js" },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "axios": "^1.6.0"
   }
 }
