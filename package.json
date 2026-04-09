@@ -1,6 +1,6 @@
 {
-  "name": "roblox-ultra-logger",
-  "version": "2.0.0",
+  "name": "roblox-logger",
+  "version": "1.0.0",
   "main": "index.js",
   "scripts": { "start": "node index.js" },
   "dependencies": {
